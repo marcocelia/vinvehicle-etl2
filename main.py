@@ -17,43 +17,39 @@ if __name__ == '__main__':
     count = 1
     for msg in consumer:
         print(f"fetch message {count}")
-        doc = msg.value
-        doc['Position'] = {
-            "lon": doc["Position.lon"],
-            "lat": doc["Position.lat"],
-            "altitude": doc["Position.altitude"],
-            "heading": doc["Position.heading"],
-            "speed": doc["Position.speed"],
-            "satellites": doc["Position.satellites"]
+        m_simple = msg.value
+        m_simple['Position'] = {
+            "lon": m_simple["Position.lon"],
+            "lat": m_simple["Position.lat"],
+            "altitude": m_simple["Position.altitude"],
+            "heading": m_simple["Position.heading"],
+            "speed": m_simple["Position.speed"],
+            "satellites": m_simple["Position.satellites"]
         }
-        del doc["Position.lon"]
-        del doc["Position.lat"]
-        del doc["Position.altitude"]
-        del doc["Position.heading"]
-        del doc["Position.speed"]
-        del doc["Position.satellites"]
+        del m_simple["Position.lon"]
+        del m_simple["Position.lat"]
+        del m_simple["Position.altitude"]
+        del m_simple["Position.heading"]
+        del m_simple["Position.speed"]
+        del m_simple["Position.satellites"]
 
         try:
-            res = db.batchSimple.insert_one(doc)
+            res = db.batchSimple.insert_one(m_simple)
             print(f"inserted {res.inserted_id} into batchSimple")
         except DuplicateKeyError as dke:
             print(dke)
+            continue
 
-        msg_complex = msg.value
-        found = False
-        for doc in db.batchComplex.find({'VinVehicle': doc['VinVehicle']}).sort([('_id', DESCENDING)]):
-            found = True
-            lastOdometer = doc['Odometer']
-            lastLifeConsumption = doc['LifeConsumption']
-            msg_complex['DeltaOdometer'] = lastOdometer - doc['Odometer']
-            msg_complex['DeltaLifeConsumption'] = lastLifeConsumption - doc['LifeConsumption']
-            break
+        m_complex = msg.value
+        if db.batchComplex.count_documents({'VinVehicle': m_complex['VinVehicle']}) > 0:
+            for doc in db.batchComplex.find({'VinVehicle': m_complex['VinVehicle']}).sort([('_id', DESCENDING)]).limit(1):
+                lastOdometer = doc['Odometer']
+                lastLifeConsumption = doc['LifeConsumption']
+                m_complex['DeltaOdometer'] = lastOdometer - m_complex['Odometer']
+                m_complex['DeltaLifeConsumption'] = lastLifeConsumption - m_complex['LifeConsumption']
+        else:
+            m_complex['DeltaOdometer'] = m_complex['Odometer']
+            m_complex['DeltaLifeConsumption'] = m_complex['LifeConsumption']
 
-        if not found:
-            msg_complex['DeltaOdometer'] = doc['Odometer']
-            msg_complex['DeltaLifeConsumption'] = doc['LifeConsumption']
-
-        res = db.batchComplex.insert_one(msg_complex)
+        res = db.batchComplex.insert_one(m_complex)
         print(f"inserted {res.inserted_id} into batchComplex")
-        count = count + 1
-
